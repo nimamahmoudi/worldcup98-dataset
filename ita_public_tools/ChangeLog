@@ -1,0 +1,4 @@
+1999-12-13 Martin Arlitt (arlitt@hpl.hp.com)
+	* changed "unsigned int" to "uint32_t" (inttypes.h)
+	* changed "unsigned char" to "uint8_t" (inttypes.h)
+	

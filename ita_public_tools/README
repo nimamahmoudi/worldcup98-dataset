@@ -1,0 +1,593 @@
+This directory contains several tools that can be used to read the
+binary logs that represent the access logs from the 1998 World Cup Web
+site (www.france98.com).  
+
+There are a number of subdirectories:
+
+bin/ -used to store binaries of the tools
+src/ -contains the source code for the tools
+input/ -contains a short (1000 request) binary log file for test purposes
+output/ -location for storing output 
+state/ -contains the mapping file from the unique object IDs to URLs
+check/ -contains output of checklog program for validation purposes
+
+The World Cup access logs have been converted from Common Log Format
+to a more compact binary format.  Each entry in the binary log is a
+fixed size, and represents a single request to the site.  The format
+of a request in the binary log looks like:
+
+struct request
+{
+  uint32_t timestamp;
+  uint32_t clientID;
+  uint32_t objectID;
+  uint32_t size;
+  uint8_t method;
+  uint8_t status;
+  uint8_t type;
+  uint8_t server;
+};
+
+uint32_t and uint8_t are defined in inttypes.h.  Note that on some
+systems these types may not be defined.  If you are using such a
+system (i.e., you see an error message like "`uint32_t' undeclared")
+then try the following:
+
+cp src/inttypes.h.fail src/inttypes.h
+
+This file redefines uint32_t as u_int32_t, and uint8_t as u_int8_t.
+
+The fields of the request structure contain the following information:
+
+timestamp - the time of the request, stored as the number of seconds
+since the Epoch.  The timestamp has been converted to GMT to allow for
+portability.  During the World Cup the local time was 2 hours ahead of
+GMT (+0200).  In order to determine the local time, each timestamp
+must be adjusted by this amount.
+
+clientID - a unique integer identifier for the client that issued the
+request (this may be a proxy); due to privacy concerns these mappings
+cannot be released; note that each clientID maps to exactly one IP
+address, and the mappings are preserved across the entire data set -
+that is if IP address 0.0.0.0 mapped to clientID X on day Y then any
+request in any of the data sets containing clientID X also came from
+IP address 0.0.0.0
+
+objectID - a unique integer identifier for the requested URL; these
+mappings are also 1-to-1 and are preserved across the entire data set.
+
+size - the number of bytes in the response
+
+method - the method contained in the client's request (e.g., GET).
+Mappings for this are contained in src/*/definitions.h.
+
+status - this field contains two pieces of information; the 2 highest
+order bits contain the HTTP version indicated in the client's request
+(e.g., HTTP/1.0); the remaining 6 bits indicate the response status
+code (e.g., 200 OK).  Mappings for the HTTP version and the status
+codes are contained in src/*/definitions.h.
+
+type - the type of file requested (e.g., HTML, IMAGE, etc), generally
+based on the file extension (.html), or the presence of a parameter
+list (e.g., '?' indicates a DYNAMIC request).  If the url ends with
+'/', it is considered a DIRECTORY.  Mappings from the integer ID to
+the generic file type are contained in definitions.h.  If more
+specific mappings are required this information can be obtained from
+analyzing the object mappings file (state/object_mappings.sort).
+
+server - indicates which server handled the request.  The upper 3 bits
+indicate which region the server was at (e.g., SANTA CLARA, PLANO,
+HERNDON, PARIS); the remaining bits indicate which server at the site
+handled the request.  All 8 bits can also be used to determine a
+unique server.  Mappings for the region are contained in
+src/*/definitions.h.
+
+Due to the size of the binary log files they are not included with
+this distribution, but are publicly available.
+
+TOOLS
+Three different tools are provided in this distribution:
+1. read
+2. checklog
+3. recreate
+
+A description of these tools, how to compile them and how to use them
+is given below.  The source code for these tools is available in the
+src/ directory.
+
+A Makefile is provided to build the three tools.  To build all three
+tools, simply use 'make'.  On certain platforms (e.g., HP-UX),
+additional compiler flags may be required.  For example, on HP-UX the
+'-Ae' flag is required.  You may edit the Makefile to add this flag,
+or utilize the Makefile.HP-UX (e.g., make -f Makefile.HP-UX). Other
+Makefile options include:
+
+make read - compile only the read tool
+make checklog - compile only the checklog tool
+make reduce - compile only the reduce tool
+make clean - remove all object files
+make distclean - remove all object files and *~ files
+
+The read tool is a very simple tool that will read each request in a
+binary log and print the total number of requests contained in that
+log.  This tool is provided for those who have not worked with binary
+files before.
+
+To compile this tool:
+make
+or make read
+
+To use this tool:
+gzip -dc <compressed binary log> | bin/read
+
+Example: read each of the 1000 requests in the test_log
+
+gzip -dc input/test_log.gz | bin/read
+Initializing
+Reading Access Log
+0
+1000
+Terminating
+
+The checklog tool reads the access log and calculates a number of high
+level statistics (e.g., total requests and bytes transferred).  It
+also shows how to extract the information from each field in the
+request structure.  This program is more efficient than recreate as it
+does not convert objectIDs to URLs, nor does it convert the timestamps
+to string formats.  This tool serves purposes:
+
+1) to determine high level statistics for an access log
+2) to serve as an example of how to extract the information in the log
+3) to validate that the access logs were transferred correctly
+
+To compile this tool:
+make
+or make checklog
+
+To use this tool:
+gzip -dc <compressed binary log> | bin/checklog
+
+Example: check that the test_log was transferred correctly
+gzip -dc input/test_log.gz | bin/checklog > check.out
+Initializing
+Reading Access Log
+0
+1000
+Printing Results
+Terminating
+diff check.out check/test_log.check 
+
+If there is a difference between your output and the checklog
+results provided in the directory check, then an error has occurred.
+Before performing any additional analyses on these logs you should
+determine the source of this error.
+
+The results for checklog on each day's access log have been stored in
+check (wc_day*_*.check), as has the results for all requests
+(wc_alldays.check).
+
+The recreate tool is used for converting the binary logs back into
+Common Log Format, which could potentially be used as input to other
+existing tools which expect this standard format.  This tool also
+calculates several high level statistics, similar to checklog.
+However, since this tool converts several of the fields (objectID and
+timestamp) it is slower than checklog.
+
+To compile this tool:
+make
+or make reduce
+
+To use this tool:
+gzip -dc <compressed binary access log> | bin/recreate file_mappings stats
+where:
+
+file_mappings is a data file containing the objectID to URL mappings
+(should be in state/object_mappings.sort)
+
+stats is the name of a data file where recreate can store its results
+
+Example: recreate Common Log Format for test_log
+gzip -dc input/test_log.gz | bin/recreate state/object_mappings.sort > output/recreate.out
+Initializing
+Reading Access Log
+0
+1000
+Printing Results
+    Total Requests: 1000
+       Total Bytes: 5410216
+Mean Transfer Size: 5410.216000
+     Max Client ID: 34607
+     Max Object ID: 4505
+        Start Time: 893971817
+       Finish Time: 893973655
+      Out of Order: 0
+Terminating
+
+This program will print the statistics to stderr, and the Common Log
+Format of the access log to stdout (redirected to output/recreate.out in
+the example).
+
+The first five lines of the test_log should look like:
+34600 - - [30/Apr/1998:21:30:17 +0000] "GET /images/hm_bg.jpg HTTP/1.0" 200 24736
+232 - - [30/Apr/1998:21:30:53 +0000] "GET /images/hm_bg.jpg HTTP/1.0" 200 24736
+282 - - [30/Apr/1998:21:31:12 +0000] "GET /images/hm_bg.jpg HTTP/1.0" 200 24736
+9719 - - [30/Apr/1998:21:31:19 +0000] "GET /french/splash_inet.html HTTP/1.0" 200 3781
+9719 - - [30/Apr/1998:21:31:22 +0000] "GET /images/hm_nbg.jpg HTTP/1.0" 304 -
+
+Note that the clientID remains in its unique integer format.  If
+necessary this can be converted to a made-up IP address.  To do this
+you could add the following to recreate.c (in the appropriate
+locations!):
+
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+struct in_addr S;
+char *ip_addr;
+
+/* determine the IP address */
+S.s_addr = (unsigned long)R->clientID;
+ip_addr = inet_ntoa(S);
+
+and then modify the fprintf statement to use ip_addr rather than
+R->clientID.
+
+
+Hints, Tips, Pitfalls and other Comments
+
+The access logs for all servers have been combined into a single
+sequence of requests, sorted by the recorded timestamp of each
+request.  Due to the volume of data, the binary log has been split
+into a number of intervals.  Each interval represents one day of the
+overall log, beginning at 0:00:00 local time in Paris and ending at
+23:59:59 the same day.  In order to keep the size of each log file
+below 50 MB some of the 1 day intervals needed to be divided into
+subintervals.  In this situation the first (n-1) subintervals each
+contain 7 million requests while the nth subinterval contains between
+1 and 7,000,000 requests.
+
+The log files have the following naming format:
+
+wc_dayX_Y.gz
+
+where:
+X is an integer that represents the day of the access log
+Y is an integer that represents the subinterval for a particular day
+
+Chronological order is determined first by the day of the access log
+and second by the subinterval (lower subintervals occur first).  For
+example the following sequence would replay the request sequence for
+days 79-81 in chronological order:
+
+wc_day79_1.gz
+wc_day79_2.gz
+wc_day79_3.gz
+wc_day79_4.gz
+wc_day80_1.gz
+wc_day80_2.gz
+wc_day81_1.gz
+
+In total there are 249 binary log files for the 92 days during which
+the access logs were collected (actually no access logs were collected
+on the first four days; an empty binary log file exists for days 1
+through 4). The day of the week can be readily determined from
+the number assigned to the log file:
+
+if DAY mod 7 = 1 then the log was collected on a Sunday;
+if DAY mod 7 = 2 then the log was collected on a Monday;
+if DAY mod 7 = 3 then the log was collected on a Tuesday;
+if DAY mod 7 = 4 then the log was collected on a Wednesday;
+if DAY mod 7 = 5 then the log was collected on a Thursday;
+if DAY mod 7 = 6 then the log was collected on a Friday;
+if DAY mod 7 = 0 then the log was collected on a Saturday;
+
+For example, wc_day92_1.gz is the log file for day 92; since 92 mod 7
+= 1 we know that this log was collected on a Sunday.
+
+The following is a list of all of the available binary log files:
+
+wc_day1_1.gz April 26, 1998 (empty file)
+wc_day2_1.gz April 27, 1998 (empty file)
+wc_day3_1.gz April 28, 1998 (empty file)
+wc_day4_1.gz April 29, 1998 (empty file)
+wc_day5_1.gz April 30, 1998
+wc_day6_1.gz May 1, 1998
+wc_day7_1.gz May 2, 1998
+wc_day8_1.gz May 3, 1998
+wc_day9_1.gz May 4, 1998
+wc_day10_1.gz May 5, 1998
+wc_day11_1.gz May 6, 1998
+wc_day12_1.gz May 7, 1998
+wc_day13_1.gz May 8, 1998
+wc_day14_1.gz May 9, 1998
+wc_day15_1.gz May 10, 1998
+wc_day16_1.gz May 11, 1998
+wc_day17_1.gz May 12, 1998
+wc_day18_1.gz May 13, 1998
+wc_day19_1.gz May 14, 1998
+wc_day20_1.gz May 15, 1998
+wc_day21_1.gz May 16, 1998
+wc_day22_1.gz May 17, 1998
+wc_day23_1.gz May 18, 1998
+wc_day24_1.gz May 19, 1998
+wc_day25_1.gz May 20, 1998
+wc_day26_1.gz May 21, 1998
+wc_day27_1.gz May 22, 1998
+wc_day28_1.gz May 23, 1998
+wc_day29_1.gz May 24, 1998
+wc_day30_1.gz May 25, 1998
+wc_day31_1.gz May 26, 1998
+wc_day32_1.gz May 27, 1998
+wc_day33_1.gz May 28, 1998
+wc_day34_1.gz May 29, 1998
+wc_day35_1.gz May 30, 1998
+wc_day36_1.gz May 31, 1998
+wc_day37_1.gz June 1, 1998
+wc_day38_1.gz June 2, 1998
+wc_day38_2.gz
+wc_day39_1.gz June 3, 1998
+wc_day39_2.gz
+wc_day40_1.gz June 4, 1998
+wc_day40_2.gz
+wc_day41_1.gz June 5, 1998
+wc_day41_2.gz
+wc_day42_1.gz June 6, 1998
+wc_day43_1.gz June 7, 1998
+wc_day44_1.gz June 8, 1998
+wc_day44_2.gz
+wc_day44_3.gz
+wc_day45_1.gz June 9, 1998
+wc_day45_2.gz
+wc_day45_3.gz
+wc_day46_1.gz June 10, 1998
+wc_day46_2.gz
+wc_day46_3.gz
+wc_day46_4.gz
+wc_day46_5.gz
+wc_day46_6.gz
+wc_day46_7.gz
+wc_day46_8.gz
+wc_day47_1.gz June 11, 1998
+wc_day47_2.gz
+wc_day47_3.gz
+wc_day47_4.gz
+wc_day47_5.gz
+wc_day47_6.gz
+wc_day47_7.gz
+wc_day47_8.gz
+wc_day48_1.gz June 12, 1998
+wc_day48_2.gz
+wc_day48_3.gz
+wc_day48_4.gz
+wc_day48_5.gz
+wc_day48_6.gz
+wc_day48_7.gz
+wc_day49_1.gz June 13, 1998
+wc_day49_2.gz
+wc_day49_3.gz
+wc_day49_4.gz
+wc_day50_1.gz June 14, 1998
+wc_day50_2.gz
+wc_day50_3.gz
+wc_day50_4.gz
+wc_day51_1.gz June 15, 1998
+wc_day51_2.gz
+wc_day51_3.gz
+wc_day51_4.gz
+wc_day51_5.gz
+wc_day51_6.gz
+wc_day51_7.gz
+wc_day51_8.gz
+wc_day51_9.gz
+wc_day52_1.gz June 16, 1998
+wc_day52_2.gz
+wc_day52_3.gz
+wc_day52_4.gz
+wc_day52_5.gz
+wc_day52_6.gz
+wc_day53_1.gz June 17, 1998
+wc_day53_2.gz
+wc_day53_3.gz
+wc_day53_4.gz
+wc_day53_5.gz
+wc_day53_6.gz
+wc_day54_1.gz June 18, 1998
+wc_day54_2.gz
+wc_day54_3.gz
+wc_day54_4.gz
+wc_day54_5.gz
+wc_day54_6.gz
+wc_day55_1.gz June 19, 1998
+wc_day55_2.gz
+wc_day55_3.gz
+wc_day55_4.gz
+wc_day55_5.gz
+wc_day56_1.gz June 20, 1998
+wc_day56_2.gz
+wc_day56_3.gz
+wc_day57_1.gz June 21, 1998
+wc_day57_2.gz
+wc_day57_3.gz
+wc_day58_1.gz June 22, 1998
+wc_day58_2.gz
+wc_day58_3.gz
+wc_day58_4.gz
+wc_day58_5.gz
+wc_day58_6.gz
+wc_day59_1.gz June 23, 1998
+wc_day59_2.gz
+wc_day59_3.gz
+wc_day59_4.gz
+wc_day59_5.gz
+wc_day59_6.gz
+wc_day59_7.gz
+wc_day60_1.gz June 24, 1998
+wc_day60_2.gz
+wc_day60_3.gz
+wc_day60_4.gz
+wc_day60_5.gz
+wc_day60_6.gz
+wc_day60_7.gz
+wc_day61_1.gz June 25, 1998
+wc_day61_2.gz
+wc_day61_3.gz
+wc_day61_4.gz
+wc_day61_5.gz
+wc_day61_6.gz
+wc_day61_7.gz
+wc_day61_8.gz
+wc_day62_1.gz June 26, 1998
+wc_day62_2.gz
+wc_day62_3.gz
+wc_day62_4.gz
+wc_day62_5.gz
+wc_day62_6.gz
+wc_day62_7.gz
+wc_day62_8.gz
+wc_day62_9.gz
+wc_day62_10.gz
+wc_day63_1.gz June 27, 1998
+wc_day63_2.gz
+wc_day63_3.gz
+wc_day63_4.gz
+wc_day64_1.gz June 28, 1998
+wc_day64_2.gz
+wc_day64_3.gz
+wc_day65_1.gz June 29, 1998
+wc_day65_2.gz
+wc_day65_3.gz
+wc_day65_4.gz
+wc_day65_5.gz
+wc_day65_6.gz
+wc_day65_7.gz
+wc_day65_8.gz
+wc_day65_9.gz
+wc_day66_1.gz June 30, 1998
+wc_day66_2.gz
+wc_day66_3.gz
+wc_day66_4.gz
+wc_day66_5.gz
+wc_day66_6.gz
+wc_day66_7.gz
+wc_day66_8.gz
+wc_day66_9.gz
+wc_day66_10.gz
+wc_day66_11.gz
+wc_day67_1.gz July 1, 1998
+wc_day67_2.gz
+wc_day67_3.gz
+wc_day67_4.gz
+wc_day67_5.gz
+wc_day68_1.gz July 2, 1998
+wc_day68_2.gz
+wc_day68_3.gz
+wc_day69_1.gz July 3, 1998
+wc_day69_2.gz
+wc_day69_3.gz
+wc_day69_4.gz
+wc_day69_5.gz
+wc_day69_6.gz
+wc_day69_7.gz
+wc_day70_1.gz July 4, 1998
+wc_day70_2.gz
+wc_day70_3.gz
+wc_day71_1.gz July 5, 1998
+wc_day71_2.gz
+wc_day72_1.gz July 6, 1998
+wc_day72_2.gz
+wc_day72_3.gz
+wc_day73_1.gz July 7, 1998
+wc_day73_2.gz
+wc_day73_3.gz
+wc_day73_4.gz
+wc_day73_5.gz
+wc_day73_6.gz
+wc_day74_1.gz July 8, 1998
+wc_day74_2.gz
+wc_day74_3.gz
+wc_day74_4.gz
+wc_day74_5.gz
+wc_day74_6.gz
+wc_day75_1.gz July 9, 1998
+wc_day75_2.gz
+wc_day75_3.gz
+wc_day76_1.gz July 10, 1998
+wc_day76_2.gz
+wc_day77_1.gz July 11, 1998
+wc_day77_2.gz
+wc_day78_1.gz July 12, 1998
+wc_day78_2.gz
+wc_day79_1.gz July 13, 1998
+wc_day79_2.gz
+wc_day79_3.gz
+wc_day79_4.gz
+wc_day80_1.gz July 14, 1998
+wc_day80_2.gz
+wc_day81_1.gz July 15, 1998
+wc_day82_1.gz July 16, 1998
+wc_day83_1.gz July 17, 1998
+wc_day84_1.gz July 18, 1998
+wc_day85_1.gz July 19, 1998
+wc_day86_1.gz July 20, 1998
+wc_day87_1.gz July 21, 1998
+wc_day88_1.gz July 22, 1998
+wc_day89_1.gz July 23, 1998
+wc_day90_1.gz July 24, 1998
+wc_day91_1.gz July 25, 1998
+wc_day92_1.gz July 26, 1998
+
+
+Don't forget that the timestamps are in GMT, while the local time in
+France was 2 hours ahead of that (the boundaries were established to
+correspond to local time at the tournament).
+
+Each unique URL seen in the access log was assigned a distinct integer
+identifier.  Note however, that a client can request a URL that does
+not exist on a server.  Such requests will result in an error (i.e..,
+a response status of 4xx or 5xx).  When analyzing the references to
+files on the site it may be best to focus only on the Successful
+responses.
+
+As was mentioned earlier, due to the size of the access logs it was
+necessary to break the reduced binary log into a number of pieces.
+After downloading several of the binary logs you may want to merge the
+logs into several larger files in order to make them easier to work
+with.
+
+For example:
+
+gzip -dc wc_day80_1.gz wc_day80_2.gz | gzip -f > wc_day80.gz
+
+will combine the two subintervals for day 80 into a single file.
+
+Even if you have multiple log files it is still possible to read these
+pieces as if they were a single file.  For example, to recreate
+several pieces of an access log in Common Log Format, the following
+command could be issued:
+
+gzip -dc piece1.gz piece2.gz | bin/recreate state/object_mappings.sort
+recreate.stats 
+
+The binary log files were created on an HP PA-RISC machine.  As a
+result the binary files are in big endian (i.e., network order)
+format.  The three example programs were written knowing that the
+binary files are in big endian format.  Each program attempts to
+determine the format utilized by the platform you are working on, and
+convert it accordingly (thanks to Greg Oster for the code to do this).
+While these files have been tested and found to work properly on both
+big endian (HP PA-RISC) and little endian (Intel Pentium)
+architectures, this is still a potential source of problems.
+
+A technical report describing a workload characterization of these
+access logs is available from
+http://www.hpl.hp.com/techreports/1999/HPL-1999-35R1.html.  The original
+version of this report was published in February 1999.  A revision of
+this paper was completed in September 1999.
+
+Acknowledgements
+
+I would like to thank Greg Oster for donating the code to convert
+between big and little endian machines, and Balachander Krishnamurthy
+for providing feedback on how to improve the interface of the tools.
+
+

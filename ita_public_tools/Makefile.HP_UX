@@ -1,0 +1,37 @@
+prefix = .
+bindir = $(prefix)/bin
+srcdir = $(prefix)/src
+
+OS = $(shell uname -s)
+CC = cc
+
+CFLAGS = -Ae -Wall
+
+all: read checklog recreate
+
+read: read.o endian.o
+	$(CC) $(CFLAGS) -o $(bindir)/read read.o endian.o
+
+checklog: checklog.o endian.o
+	$(CC) $(CFLAGS) -o $(bindir)/checklog checklog.o endian.o
+
+recreate: recreate.o endian.o
+	$(CC) $(CFLAGS) -o $(bindir)/recreate recreate.o endian.o
+
+read.o : $(srcdir)/read.c $(srcdir)/request.h $(srcdir)/definitions.h
+	$(CC) $(CFLAGS) -c $(srcdir)/read.c
+
+checklog.o: $(srcdir)/checklog.c $(srcdir)/request.h $(srcdir)/definitions.h
+	$(CC) $(CFLAGS) -c $(srcdir)/checklog.c
+
+recreate.o: $(srcdir)/recreate.c $(srcdir)/request.h $(srcdir)/definitions.h
+	$(CC) $(CFLAGS) -c $(srcdir)/recreate.c
+
+endian.o: $(srcdir)/endian.c $(srcdir)/endian.h
+	$(CC) $(CFLAGS) -c $(srcdir)/endian.c
+
+clean:
+	rm -f *.o $(bindir)/read $(bindir)/checklog $(bindir)/recreate
+
+distclean: clean
+	rm -f *~ $(srcdir)/*~

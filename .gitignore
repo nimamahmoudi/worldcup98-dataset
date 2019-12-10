@@ -123,3 +123,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+input/*.gz
+output/*.log
+
+ita_public_tools/check/*
