@@ -52,8 +52,8 @@ sns.set()
 
 # Scaling the number of requests to another maximum
 scaled_max = 100
-scaled_sub_df = (sub_df / sub_df['count'].max() * scaled_max).apply(lambda x: round(x))
-scaled_sub_df['count'] = scaled_sub_df['count'].apply(lambda x: int(x))
+scaled_sub_df = (sub_df / sub_df['count'].max() * scaled_max)
+scaled_sub_df['count'] = scaled_sub_df['count'].apply(lambda x: float(x))
 
 scaled_sub_df.plot()
 plt.savefig('sample.png')
